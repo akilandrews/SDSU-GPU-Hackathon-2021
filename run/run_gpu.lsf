@@ -1,0 +1,23 @@
+#!/bin/bash
+
+#BSUB -P gen157
+#BSUB -W 1:00
+#BSUB -nnodes 1
+#BSUB -q batch
+#BSUB -J simcov
+#BSUB -o stdout.%J
+#BSUB -e stderr.%J
+
+set -e
+
+#module use /gpfs/wolf/world-shared/gen157/simcov/modulefiles
+#module load upcxx-cuda
+export GASNET_BACKTRACE=1
+
+#jsrun -n 2 -a 1 -g 1 -c 1 ./cuda_vecadd
+for sz in 100 200 300 400 500 600; do
+  jsrun -n 1 -a 1 -g 1 -c 7 -brs ../simcov_simple -gpu $sz >$sz.log &
+done
+
+wait
+./sum.sh
