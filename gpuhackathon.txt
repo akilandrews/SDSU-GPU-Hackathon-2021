@@ -1,0 +1,5 @@
+init_tissue_gpu
+init_tissue_cpu
+check_epicell_state - check if -1
+
+F = x + y * x + z * x * y
