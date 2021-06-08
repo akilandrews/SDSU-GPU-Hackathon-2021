@@ -1,3 +1,4 @@
+
 #include <random>
 #include <iostream>
 #include <fstream>
@@ -27,16 +28,76 @@ class Random {
 struct Level {
   int L = 0, r = 0, count = 0;
   double bAngle = 0.0, gAngle = 0.0;
-  int centroid[3] = {0, 0, 0};
-  double direction[3] = {0.0, 0.0, 0.0};
 };
 
-int64_t numAirways = 0, numAirwayCells = 0, numOutOfBoundsCells = 0;
-std::set<int64_t> airwayEpiCellPositions1D;
-std::vector<Level> levels;
-std::shared_ptr<Random> rnd_gen = std::make_shared<Random>(753695190);
+// Input parameters
 #define DIMENSION (300)
 int gridSize[3] = {DIMENSION, DIMENSION, DIMENSION};
+/** For each human lung lobe (5)
+* generations = num gen to model, startIndex = starting row in table.txt
+* upper right - 24, 0
+* middle right - 24, 24
+* lower right - 26, 48
+* upper left - 24, 74
+* lower left - 25, 98
+*/
+// Build last 3 generations of upper right lobe
+int generations = 3, startIndex = 24 - generations;
+
+// Output variables
+int64_t numAirways = 0, numAirwayCells = 0;
+int64_t numAlveoli = 0, numAlveoliCells = 0;
+int64_t numOutOfBoundsCells = 0;
+std::set<int64_t> epiCellPositions1D;
+std::vector<Level> levels;
+std::shared_ptr<Random> rnd_gen = std::make_shared<Random>(753695190);
+
+void constructAlveoli(const int (&pos)[3], double bAngle, double rotateZ) {
+  // Single alveolar volume 200x200x200 um, ? et al ? 40x40x40 units, [-20, 20]
+  int idim = 20;
+  for (int x = -idim; x <= idim; x++) {
+    for (int y = -idim; y <= idim; y++) {
+      for (int z = 0; z < (2 * idim); z++) {
+        if (x == -idim || x == idim) || // Cells in the x planes
+          y == -idim || y == idim || // Cells in the y planes
+          (z == (2 * idim) - 1)) { // Cells in the z plane at alveolar bottom
+          addPosition(x, y, z, pos, bAngle, rotateZ);
+        }
+      }
+    }
+  }
+  numAlveoli++;
+}
+
+void addPosition(int x,
+  int y,
+  int z,
+  const Int3D &pos,
+  double bAngle,
+  double rotateZ) {
+#ifndef COMPUTE_ONLY
+  int position[3] = {x, y, z};
+  // Treat as positional vectors and apply rotations and translate y
+  rotate(position, {0.0, 1.0, 0.0}, level.bAngle);
+  // Rotate z
+  rotate(position, {0.0, 0.0, 1.0}, rotateZ);
+  position[0] += pos.x;
+  position[1] += pos.y;
+  position[2] += pos.z;
+  // Set and verify new location is within grid
+  if ((0 <= position[0] && position[0] < gridSize[0]) &&
+      (0 <= position[1] && position[1] < gridSize[1]) &&
+      (0 <= position[2] && position[2] < gridSize[2])) {
+        epiCellPositions1D.insert(position[0] + position[1]
+          * gridSize[0] + position[2] * gridSize[0] * gridSize[1]);
+        numAirwayCells++;
+  } else {
+    numOutOfBoundsCells++;
+  }
+#else
+  numAirwayCells++;
+#endif
+}
 
 void rotate(int (&vec)[3], const double (&axis)[3], double angle) {
   /**
@@ -65,30 +126,9 @@ void constructSegment(const int (&root)[3],
   double cylinderRadialIncrement = M_PI / 2;
   for (int z = 0; z <= level.L; z++) {
     for (double az = 0; az < 2 * M_PI; az += M_PI / 180) {
-#ifndef COMPUTE_ONLY
       int x = (int)round(level.r * sin(cylinderRadialIncrement) * cos(az));
       int y = (int)round(level.r * sin(cylinderRadialIncrement) * sin(az));
-      int position[3] = {x, y, z};
-      // Treat as positional vectors and apply rotations and translate y
-      rotate(position, {0.0, 1.0, 0.0}, level.bAngle);
-      // Rotate z
-      rotate(position, {0.0, 0.0, 1.0}, rotateZ);
-      position[0] += root[0];
-      position[1] += root[1];
-      position[2] += root[2];
-      // Set and verify new location is within grid
-      if ((0 <= position[0] && position[0] < gridSize[0]) &&
-          (0 <= position[1] && position[1] < gridSize[1]) &&
-          (0 <= position[2] && position[2] < gridSize[2])) {
-            airwayEpiCellPositions1D.insert(position[0] + position[1]
-              * gridSize[0] + position[2] * gridSize[0] * gridSize[1]);
-            numAirwayCells++;
-      } else {
-        numOutOfBoundsCells++;
-      }
-#else
-      numAirwayCells++;
-#endif
+      addPosition(x, y, z, root, level.bAngle, rotateZ);
     }
   }
   // Create root for next generation
@@ -99,6 +139,10 @@ void constructSegment(const int (&root)[3],
   newRoot[1] = root[1] + base[1];
   newRoot[2] = root[2] + base[2];
   numAirways++;
+  //TODO Draw alveolus at each terminal airway
+  if (isTerminal) {
+    constructAlveoli(newRoot, level.bAngle, rotateZ);
+  }
 }
 
 void construct(int (&root)[3],
@@ -169,18 +213,16 @@ void loadEstimatedParameters(std::vector<Level>& levels) {
 
 int main(int argc, char *argv[]) {
   loadEstimatedParameters(levels);
-  // Generate partial upper right lobe starting at root and recursively build tree
-  int generations = 3;
-  int startIndex = 24 - generations;
   Level lvl = levels.at(startIndex);
+  // Starting at root and recursively build tree
   int root[3] = {gridSize[0]/6, gridSize[1]/2, 0};
   int child[3] = {0, 0, 0};
   constructSegment(root, lvl, 0.0, false, child);
   construct(child, 1, startIndex + 1, generations - 1, lvl.bAngle, 0.0);
   // Print stats
-  std::printf("Airways " "%" PRId64 "\n", numAirways);
-  std::printf("Epithelial cells generated " "%" PRId64, numAirwayCells);
-  std::printf(" Out of bounds " "%" PRId64 "\n", numOutOfBoundsCells);
+  std::printf("Alveolars " "%" PRId64 " epithileal cells " "%" PRId64 "\n", numAlveoli, numAlveoliCells);
+  std::printf("Airways " "%" PRId64 " epithileal cells " "%" PRId64 "\n", numAirways, numAirwayCells);
+  std::printf("Cells out of bounds " "%" PRId64 "\n", numOutOfBoundsCells);
   // Write airway epithileal cells
   std::ofstream ofs;
   ofs.open("airway.csv", std::ofstream::out | std::ofstream::app);
@@ -188,11 +230,11 @@ int main(int argc, char *argv[]) {
     std::printf("Could not create file");
     exit(1);
   }
-  for (const int64_t& a : airwayEpiCellPositions1D) {
+  for (const int64_t& a : epiCellPositions1D) {
     ofs << a << std::endl;
   }
   std::printf("Written %ld", (long)ofs.tellp());
-  std::printf(" Stored " "%" PRId64 "\n", airwayEpiCellPositions1D.size());
+  std::printf(" Stored " "%" PRId64 "\n", epiCellPositions1D.size());
   ofs.close();
   return 0;
 }

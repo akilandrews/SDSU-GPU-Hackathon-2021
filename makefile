@@ -1,31 +1,18 @@
-RAND123 = /gpfs/wolf/gen157/proj-shared/simcov/curand/Random123-1.13.2
-
 CXX = g++
-NVCC = nvcc
-CXXFLAGS = -I$(RAND123)/include -Xcompiler -fopenmp -Iinclude
-LDFLAGS = -Xcompiler -fopenmp
+CXXFLAGS = -Iinclude
+LDFLAGS = -Xcompiler
 
-all: build/main.o build/system.o
-	$(NVCC) $^ $(LDFLAGS) -o simcov_simple
+all: build/lung.o
+	$(CXX) $^ $(LDFLAGS) -o lungmodel
 
-
-debug: build/dbg_main.o build/dbg_system.o
-	$(NVCC) $^ $(LDFLAGS) -g -G -o simcov_simple
+debug: build/dbg_lung.o
+	$(CXX) $^ $(LDFLAGS) -g -G -o lungmodel
 
 clean:
-	rm build/main.o build/system.o
+	rm build/lung.o
 
-build:
-	mkdir -p build
+build/lung.o: src/lung.cpp build
+	$(CXX) -c -o $@ $(CXXFLAGS) src/lung.cpp
 
-build/main.o: src/main.cu build
-	$(NVCC) -c -o $@ $(CXXFLAGS) src/main.cu
-
-build/system.o: src/system.cu build
-	$(NVCC) -c -o $@ $(CXXFLAGS) src/system.cu
-
-build/dbg_main.o: src/main.cu
-	$(NVCC) -c -o $@ $(CXXFLAGS) src/main.cu
-
-build/dbg_system.o: src/system.cu build
-	$(NVCC) -c -o $@ $(CXXFLAGS) src/system.cu
+build/dbg_lung.o: src/lung.cpp build
+	$(CXX) -c -o $@ $(CXXFLAGS) src/lung.cpp
