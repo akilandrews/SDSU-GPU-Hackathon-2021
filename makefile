@@ -8,6 +8,9 @@ all: build/lung.o
 debug: build/dbg_lung.o
 	$(CXX) $^ $(LDFLAGS) -g -G -o lungmodel
 
+build:
+	mkdir -p build
+
 clean:
 	rm build/lung.o
 
