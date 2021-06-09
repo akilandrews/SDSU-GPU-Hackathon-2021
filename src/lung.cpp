@@ -7,6 +7,7 @@
 #include <vector>
 #include <algorithm>
 #include <cassert>
+#include <cstring>
 #include <memory>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -31,18 +32,7 @@ struct Level {
 };
 
 // Input parameters
-#define DIMENSION (300)
-int gridSize[3] = {DIMENSION, DIMENSION, DIMENSION};
-/** For each human lung lobe (5)
-* generations = num gen to model, startIndex = starting row in table.txt
-* upper right - 24, 0
-* middle right - 24, 24
-* lower right - 26, 48
-* upper left - 24, 74
-* lower left - 25, 98
-*/
-// Build last 3 generations of upper right lobe
-int generations = 3, startIndex = 24 - generations;
+int gridSize[3] = {0};
 
 // Output variables
 int64_t numAirways = 0, numAirwayCells = 0;
@@ -51,53 +41,6 @@ int64_t numOutOfBoundsCells = 0;
 std::set<int64_t> epiCellPositions1D;
 std::vector<Level> levels;
 std::shared_ptr<Random> rnd_gen = std::make_shared<Random>(753695190);
-
-void constructAlveoli(const int (&pos)[3], double bAngle, double rotateZ) {
-  // Single alveolar volume 200x200x200 um, ? et al ? 40x40x40 units, [-20, 20]
-  int idim = 20;
-  for (int x = -idim; x <= idim; x++) {
-    for (int y = -idim; y <= idim; y++) {
-      for (int z = 0; z < (2 * idim); z++) {
-        if (x == -idim || x == idim) || // Cells in the x planes
-          y == -idim || y == idim || // Cells in the y planes
-          (z == (2 * idim) - 1)) { // Cells in the z plane at alveolar bottom
-          addPosition(x, y, z, pos, bAngle, rotateZ);
-        }
-      }
-    }
-  }
-  numAlveoli++;
-}
-
-void addPosition(int x,
-  int y,
-  int z,
-  const Int3D &pos,
-  double bAngle,
-  double rotateZ) {
-#ifndef COMPUTE_ONLY
-  int position[3] = {x, y, z};
-  // Treat as positional vectors and apply rotations and translate y
-  rotate(position, {0.0, 1.0, 0.0}, level.bAngle);
-  // Rotate z
-  rotate(position, {0.0, 0.0, 1.0}, rotateZ);
-  position[0] += pos.x;
-  position[1] += pos.y;
-  position[2] += pos.z;
-  // Set and verify new location is within grid
-  if ((0 <= position[0] && position[0] < gridSize[0]) &&
-      (0 <= position[1] && position[1] < gridSize[1]) &&
-      (0 <= position[2] && position[2] < gridSize[2])) {
-        epiCellPositions1D.insert(position[0] + position[1]
-          * gridSize[0] + position[2] * gridSize[0] * gridSize[1]);
-        numAirwayCells++;
-  } else {
-    numOutOfBoundsCells++;
-  }
-#else
-  numAirwayCells++;
-#endif
-}
 
 void rotate(int (&vec)[3], const double (&axis)[3], double angle) {
   /**
@@ -117,6 +60,56 @@ void rotate(int (&vec)[3], const double (&axis)[3], double angle) {
   vec[2] = (int)round(newZ);
 }
 
+void addPosition(int x,
+  int y,
+  int z,
+  const int (&pos)[3],
+  double bAngle,
+  double rotateZ,
+  int64_t &numCells) {
+#ifndef COMPUTE_ONLY
+  int position[3] = {x, y, z};
+  // Treat as positional vectors and apply rotations and translate y
+  rotate(position, {0.0, 1.0, 0.0}, bAngle);
+  // Rotate z
+  rotate(position, {0.0, 0.0, 1.0}, rotateZ);
+  position[0] += pos[0];
+  position[1] += pos[1];
+  position[2] += pos[2];
+  // Set and verify new location is within grid
+  if ((0 <= position[0] && position[0] < gridSize[0]) &&
+      (0 <= position[1] && position[1] < gridSize[1]) &&
+      (0 <= position[2] && position[2] < gridSize[2])) {
+        epiCellPositions1D.insert(position[0] + position[1]
+          * gridSize[0] + position[2] * gridSize[0] * gridSize[1]);
+        numCells++;
+  } else {
+    numOutOfBoundsCells++;
+  }
+#else
+  numCells++;
+#endif
+}
+
+void constructAlveoli(const int (&pos)[3], double bAngle, double rotateZ) {
+  // Single alveolar volume 200x200x200 um, ? et al ? 40x40x40 units, [-20, 20]
+  int idim = 20;
+  for (int x = -idim; x <= idim; x++) {
+    for (int y = -idim; y <= idim; y++) {
+      for (int z = 0; z < (2 * idim); z++) {
+        if (x == -idim // Cells in the x planes
+          || x == idim
+          || y == -idim // Cells in the y planes
+          || y == idim
+          || (z == (2 * idim) - 1)) { // Cells in the z plane at alveolar bottom
+          addPosition(x, y, z, pos, bAngle, rotateZ, numAlveoliCells);
+        }
+      }
+    }
+  }
+  numAlveoli++;
+}
+
 void constructSegment(const int (&root)[3],
   const Level &level,
   double rotateZ,
@@ -128,7 +121,7 @@ void constructSegment(const int (&root)[3],
     for (double az = 0; az < 2 * M_PI; az += M_PI / 180) {
       int x = (int)round(level.r * sin(cylinderRadialIncrement) * cos(az));
       int y = (int)round(level.r * sin(cylinderRadialIncrement) * sin(az));
-      addPosition(x, y, z, root, level.bAngle, rotateZ);
+      addPosition(x, y, z, root, level.bAngle, rotateZ, numAirwayCells);
     }
   }
   // Create root for next generation
@@ -175,7 +168,7 @@ void construct(int (&root)[3],
   construct(child, iteration + 1, index + 1, end, lvl.bAngle, rotateZ);
 }
 
-void loadEstimatedParameters(std::vector<Level>& levels) {
+void loadEstimatedParameters() {
   /* Yeh et al 1980
     scale = 2000  => 1 unit = 5um, 1cm = 10^-2m = 10^4 um, 10^4/5 = 2000 units
   */
@@ -212,17 +205,73 @@ void loadEstimatedParameters(std::vector<Level>& levels) {
 }
 
 int main(int argc, char *argv[]) {
-  loadEstimatedParameters(levels);
+  if (argc != 4) {
+      printf("Usage: %s <dim_x> <dim_y> <dim_z>\n", argv[0]);
+      return -1;
+  }
+  // Set input parameters //TODO add grid x,y,z offset parameter
+  gridSize[0] = atoi(argv[1]);
+  gridSize[1] = atoi(argv[2]);
+  gridSize[2] = atoi(argv[3]);
+  loadEstimatedParameters();
+  /**
+  * Starting at root and recursively build tree
+  * lung lobe, num gen to model, starting row in table.txt
+  */
+  //TODO put in loop
+  // upper right lobe, 24, 0
+  int generations = 24;
+  int startIndex = 0;
   Level lvl = levels.at(startIndex);
-  // Starting at root and recursively build tree
-  int root[3] = {gridSize[0]/6, gridSize[1]/2, 0};
+  int root[3] = {gridSize[0]/2, gridSize[1]/2, 0};
   int child[3] = {0, 0, 0};
   constructSegment(root, lvl, 0.0, false, child);
   construct(child, 1, startIndex + 1, generations - 1, lvl.bAngle, 0.0);
+  // middle right, 24, 24
+  generations = 24;
+  startIndex = 24;
+  lvl = levels.at(startIndex);
+  root[0] = gridSize[0]/2;
+  root[1] = gridSize[1]/2;
+  root[2] =  0;
+  memset(child, 0, sizeof(child));
+  constructSegment(root, lvl, 0.0, false, child);
+  construct(child, 1, startIndex + 1, generations - 1, lvl.bAngle, 0.0);
+  // lower right, 26, 48
+  generations = 26;
+  startIndex = 48;
+  lvl = levels.at(startIndex);
+  root[0] = gridSize[0]/2;
+  root[1] = gridSize[1]/2;
+  root[2] =  0;
+  memset(child, 0, sizeof(child));
+  constructSegment(root, lvl, 0.0, false, child);
+  construct(child, 1, startIndex + 1, generations - 1, lvl.bAngle, 0.0);
+  // upper left, 24, 74
+  generations = 24;
+  startIndex = 74;
+  lvl = levels.at(startIndex);
+  root[0] = gridSize[0]/2;
+  root[1] = gridSize[1]/2;
+  root[2] =  0;
+  memset(child, 0, sizeof(child));
+  constructSegment(root, lvl, 0.0, false, child);
+  construct(child, 1, startIndex + 1, generations - 1, lvl.bAngle, 0.0);
+  // lower left, 25, 98
+  generations = 25;
+  startIndex = 98;
+  lvl = levels.at(startIndex);
+  root[0] = gridSize[0]/2;
+  root[1] = gridSize[1]/2;
+  root[2] =  0;
+  memset(child, 0, sizeof(child));
+  constructSegment(root, lvl, 0.0, false, child);
+  construct(child, 1, startIndex + 1, generations - 1, lvl.bAngle, 0.0);
   // Print stats
-  std::printf("Alveolars " "%" PRId64 " epithileal cells " "%" PRId64 "\n", numAlveoli, numAlveoliCells);
-  std::printf("Airways " "%" PRId64 " epithileal cells " "%" PRId64 "\n", numAirways, numAirwayCells);
-  std::printf("Cells out of bounds " "%" PRId64 "\n", numOutOfBoundsCells);
+  std::printf("Alveolars " "%" PRId64 " cells " "%" PRId64 "\n", numAlveoli, numAlveoliCells);
+  std::printf("Airways " "%" PRId64 " cells " "%" PRId64 "\n", numAirways, numAirwayCells);
+  std::printf("Total cells " "%" PRId64 " cells out of bounds " "%" PRId64 "\n", numAlveoliCells + numAirwayCells, numOutOfBoundsCells);
+#ifndef COMPUTE_ONLY
   // Write airway epithileal cells
   std::ofstream ofs;
   ofs.open("airway.csv", std::ofstream::out | std::ofstream::app);
@@ -236,5 +285,6 @@ int main(int argc, char *argv[]) {
   std::printf("Written %ld", (long)ofs.tellp());
   std::printf(" Stored " "%" PRId64 "\n", epiCellPositions1D.size());
   ofs.close();
+#endif
   return 0;
 }

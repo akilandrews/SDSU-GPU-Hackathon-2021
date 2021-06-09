@@ -1,6 +1,6 @@
 CXX = g++
-CXXFLAGS = -Iinclude
-LDFLAGS = -Xcompiler
+CXXFLAGS = -Iinclude -DCOMPUTE_ONLY
+LDFLAGS = 
 
 all: build/lung.o
 	$(CXX) $^ $(LDFLAGS) -o lungmodel
@@ -12,7 +12,7 @@ build:
 	mkdir -p build
 
 clean:
-	rm build/lung.o
+	rm lungmodel build/lung.o
 
 build/lung.o: src/lung.cpp build
 	$(CXX) -c -o $@ $(CXXFLAGS) src/lung.cpp
