@@ -17,4 +17,4 @@ export UPCXX_NETWORK=ibv
 #./lungmodel --dim 800 800 800 --levels 10 --scale 2000 --output lung_model_data
 #cd ..
 #upcxx-run -N 1 -n 16 -- install/bin/simcov --config covid_default.config --progress -v
-./lungmodel
+./lungmodel 300 300 300
