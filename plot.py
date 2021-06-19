@@ -24,8 +24,8 @@ def main(dimension):
     ax.set_ylabel('Y', fontsize=24)
     ax.set_zlabel('Z', fontsize=24)
     plt.show()
-    # # plt.savefig('analysis-dates.png', dpi=300)
-    # # plt.clf()
+    #plt.savefig('lung.png', dpi=300)
+    #plt.clf()
 
 
 if __name__ == "__main__":

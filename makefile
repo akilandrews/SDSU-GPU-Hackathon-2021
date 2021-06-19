@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Iinclude -DCOMPUTE_ONLY
+CXXFLAGS = -Iinclude -DCOMPUTE_BOUNDS
 LDFLAGS = 
 
 all: build/lung.o
