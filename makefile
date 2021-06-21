@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Iinclude -DCOMPUTE_BOUNDS
+CXXFLAGS = -Iinclude -DSLM_RECORD_POSITIONS
 LDFLAGS = 
 
 all: build/lung.o
@@ -14,7 +14,7 @@ build:
 clean:
 	rm lungmodel build/lung.o
 
-build/lung.o: src/lung.cpp build
+build/lung.o: src/lung.cpp build clean
 	$(CXX) -c -o $@ $(CXXFLAGS) src/lung.cpp
 
 build/dbg_lung.o: src/lung.cpp build
