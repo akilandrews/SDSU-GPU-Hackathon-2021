@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --partition=bigmem-3TB
+#SBATCH --partition=bigmem-1TB
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=32
-#SBATCH --time=0
+#SBATCH --time=2-00:00
 #SBATCH --job-name=simcov_test_w_model
 #SBATCH --mail-user=akilandrews@unm.edu
 #SBATCH --mail-type=END

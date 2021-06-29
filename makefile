@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Iinclude -DSLM_RECORD_POSITIONS
+CXXFLAGS = -Iinclude
 LDFLAGS = 
 
 all: build/lung.o
