@@ -256,6 +256,8 @@ void loadEstimatedParameters() {
 void reset() {
     minx = maxx = miny = maxy = minz = maxz = 0;
     numIntersectCells = 0;
+    numAlveoli = numAlveoliCells = 0;
+    numAirways = numAirwayCells = 0;
     epiCellPositions1D.clear();
 }
 
@@ -302,7 +304,6 @@ int main(int argc, char *argv[]) {
         std::fprintf(stderr, "Alveolars " "%" PRId64 " cells " "%" PRId64 "\n", numAlveoli, numAlveoliCells);
         std::fprintf(stderr, "Airways " "%" PRId64 " cells " "%" PRId64 "\n", numAirways, numAirwayCells);
         std::fprintf(stderr, "Total cells " "%" PRId64 "\n", numAlveoliCells + numAirwayCells);
-        numAlveoli = numAlveoliCells = numAirways = numAirwayCells = 0;
 #ifdef SLM_WRITE_TO_FILE
         ofs.open("airway.csv", std::ofstream::out | std::ofstream::app);
         if (!ofs.is_open()) {
