@@ -12,8 +12,25 @@
 #include <fcntl.h>
 #include <inttypes.h>
 
+class Random {
+private:
+    std::mt19937_64 generator;
+    std::uniform_int_distribution<int32_t> distribution;
+public:
+    static constexpr double deg2rad = M_PI / 180;
+    Random(unsigned seed, int32_t minv, int32_t maxv)
+        : generator(seed), distribution(minv, maxv) {}
+    double get() {
+        return distribution(generator) * deg2rad;
+    }
+};
+
+struct Level {
+    int32_t L = 0, r = 0, count = 0;
+    double bAngle = 0.0, gAngle = 0.0;
+};
+
 // Model variables
-const double deg2rad = M_PI / 180;
 const double twoPi = M_PI * 2;
 const double cylinderRadialIncrement = M_PI / 2;
 const int idim = 20;
@@ -23,26 +40,8 @@ double yaxis[3] = { 0.0, 1.0, 0.0 };
 double zaxis[3] = { 0.0, 0.0, 1.0 };
 std::vector<Level> levels;
 std::shared_ptr<Random> rnd_gen = std::make_shared<Random>(753695190, 0, 179);
-
-class Random {
-    
-private:
-    std::mt19937_64 generator;
-    std::uniform_int_distribution<int32_t> distribution;
-    
-public:
-    Random(unsigned seed, int32_t minv, int32_t maxv)
-        : generator(seed), distribution(minv, maxv) {}
-    double get() {
-        return distribution(generator) * deg2rad;
-    }
-
-};
-
-struct Level {
-    int32_t L = 0, r = 0, count = 0;
-    double bAngle = 0.0, gAngle = 0.0;
-};
+time_t startProgram, endProgram, startFunction, endFunction;
+double timeProgram = 0.0, timeFunction = 0.0;
 
 // Input parameters
 int32_t gridSize[3] = {0}; // Simulation space size
@@ -161,8 +160,9 @@ void constructSegment(const int32_t (&root)[3],
     bool isTerminal,
     int32_t (&newRoot)[3]) {
     // Build cylinder at origin along y-axis
+    time(&startFunction);
     for (int32_t z = 0; z <= level.L; z++) {
-        for (double az = 0; az < twoPi; az += deg2rad) {
+        for (double az = 0; az < twoPi; az += Random::deg2rad) {
             int32_t x = (int32_t)round(level.r
                 * sin(cylinderRadialIncrement)
                 * cos(az));
@@ -184,6 +184,8 @@ void constructSegment(const int32_t (&root)[3],
     if (isTerminal) {
         constructAlveoli(newRoot, level.bAngle, rotateZ);
     }
+    time(&endFunction);
+    timeFunction += double(endFunction - startFunction);
 }
 
 void construct(const int32_t (&root)[3],
@@ -238,9 +240,9 @@ void loadEstimatedParameters() {
             lstream >> tempD;
             e.r = (int32_t)(round(scale * tempD) / 2);
             lstream >> tempI;
-            e.bAngle = tempI * deg2rad;
+            e.bAngle = tempI * Random::deg2rad;
             lstream >> tempI;
-            e.gAngle = tempI * deg2rad;
+            e.gAngle = tempI * Random::deg2rad;
             if (levels.size() > 73) {  // Negate for left lobe data
                 e.bAngle *= -1.0;
             }
@@ -273,6 +275,7 @@ int main(int argc, char *argv[]) {
     gridOffset[0] = atoi(argv[4]);
     gridOffset[1] = atoi(argv[5]);
     gridOffset[2] = atoi(argv[6]);
+    time(&startProgram);
     loadEstimatedParameters();
     /**
     * Starting at root and recursively build tree
@@ -286,8 +289,8 @@ int main(int argc, char *argv[]) {
     * lower left, 25, 98
     */
     std::ofstream ofs;
-    int generations[] = { 24, 24, 26, 24, 25 };
-    int startIndex[] = { 0, 24, 48, 74, 98 };
+    int generations[] = { 12 };//TODO 24, 24, 26, 24, 25};
+    int startIndex[] = { 0 };//TODO 24, 48, 74, 98};
     int32_t base[] = { 12628, 10516, 0 }; // Base of btree at roundUp(bounds/2)
     for (int i = 0; i < 1; i++) {//TODO 5; i++) {
         std::fprintf(stderr, "Processing lobe %d", i);
@@ -301,9 +304,17 @@ int main(int argc, char *argv[]) {
             lvl.bAngle,
             0.0);
         // Print stats
-        std::fprintf(stderr, "Alveolars " "%" PRId64 " cells " "%" PRId64 "\n", numAlveoli, numAlveoliCells);
-        std::fprintf(stderr, "Airways " "%" PRId64 " cells " "%" PRId64 "\n", numAirways, numAirwayCells);
-        std::fprintf(stderr, "Total cells " "%" PRId64 "\n", numAlveoliCells + numAirwayCells);
+        std::fprintf(stderr,
+            "Alveolars " "%" PRId64 " cells " "%" PRId64 "\n",
+            numAlveoli,
+            numAlveoliCells);
+        std::fprintf(stderr,
+            "Airways " "%" PRId64 " cells " "%" PRId64 "\n",
+            numAirways,
+            numAirwayCells);
+        std::fprintf(stderr,
+            "Total cells " "%" PRId64 "\n",
+            numAlveoliCells + numAirwayCells);
 #ifdef SLM_WRITE_TO_FILE
         ofs.open("airway.csv", std::ofstream::out | std::ofstream::app);
         if (!ofs.is_open()) {
@@ -316,10 +327,23 @@ int main(int argc, char *argv[]) {
         std::fprintf(stderr, "Bytes written %ld\n", (long)ofs.tellp());
         ofs.close();
 #endif
-        std::fprintf(stderr, "%d %d %d %d %d %d\n", minx, maxx, miny, maxy, minz, maxz);
-        std::fprintf(stderr, "Cells intersecting " "%" PRId64 "\n", numIntersectCells);
-        std::fprintf(stderr, "Recorded cells " "%" PRId64 "\n", epiCellPositions1D.size());
+        std::fprintf(stderr,
+            "%d %d %d %d %d %d\n",
+            minx, maxx, miny, maxy, minz, maxz);
+        std::fprintf(stderr,
+            "Cells intersecting " "%" PRId64 "\n",
+            numIntersectCells);
+        std::fprintf(stderr,
+            "Recorded cells " "%" PRId64 "\n",
+            epiCellPositions1D.size());
         reset();
     }
+    time(&endProgram);
+    // Print timing
+    timeProgram = double(endProgram - startProgram);
+    std::fprintf(stderr,
+        "Total time %g Time in function %g\n",
+        timeProgram,
+        timeFunction);
     return 0;
 }
