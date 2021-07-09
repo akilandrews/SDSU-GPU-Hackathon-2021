@@ -289,11 +289,14 @@ int main(int argc, char *argv[]) {
     * lower left, 25, 98
     */
     std::ofstream ofs;
-    int generations[] = { 12 };//TODO 24, 24, 26, 24, 25};
+    int generations[] = { 16 };//TODO 24, 24, 26, 24, 25};
     int startIndex[] = { 0 };//TODO 24, 48, 74, 98};
     int32_t base[] = { 12628, 10516, 0 }; // Base of btree at roundUp(bounds/2)
     for (int i = 0; i < 1; i++) {//TODO 5; i++) {
-        std::fprintf(stderr, "Processing lobe %d", i);
+        std::fprintf(stderr,
+            "Processing lobe %d generations %d\n",
+            i,
+            generations[i]);
         Level lvl = levels.at(startIndex[i]);
         int32_t root[3] = { 0, 0, 0 };
         constructSegment(base, lvl, 0.0, false, root);
