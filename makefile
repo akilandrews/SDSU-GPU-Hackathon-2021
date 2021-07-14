@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Iinclude
+CXXFLAGS = -std=c++11 -O3 -Iinclude
 LDFLAGS = 
 
 all: build/lung.o

@@ -5,12 +5,16 @@
 #include <sstream>
 #include <unordered_set>
 #include <vector>
+#include <stack>
 #include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <memory>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <chrono>
+
+#define NOW std::chrono::high_resolution_clock::now
 
 class Random {
 private:
@@ -30,6 +34,25 @@ struct Level {
     double bAngle = 0.0, gAngle = 0.0;
 };
 
+struct Branch {
+    int32_t root[3];
+    int iteration, index, end;
+    double previousBranchAngle, previousRotAngle;
+    Branch(int32_t *root,
+        int iteration,
+        int index,
+        int end,
+        int previousBranchAngle,
+        int previousRotAngle) :
+        iteration(iteration),
+        index(index),
+        end(end),
+        previousBranchAngle(previousBranchAngle),
+        previousRotAngle(previousRotAngle) {
+        std::copy(root, root + 3, this->root);
+    }
+};
+
 // Model variables
 const double twoPi = M_PI * 2;
 const double cylinderRadialIncrement = M_PI / 2;
@@ -39,9 +62,9 @@ const int idim3 = idim2 - 1;
 double yaxis[3] = { 0.0, 1.0, 0.0 };
 double zaxis[3] = { 0.0, 0.0, 1.0 };
 std::vector<Level> levels;
+std::stack<Branch> branches;
 std::shared_ptr<Random> rnd_gen = std::make_shared<Random>(753695190, 0, 179);
-time_t startProgram, endProgram, startFunction, endFunction;
-double timeProgram = 0.0, timeFunction = 0.0;
+double timeFunction = 0.0;
 
 // Input parameters
 int32_t gridSize[3] = {0}; // Simulation space size
@@ -160,7 +183,7 @@ void constructSegment(const int32_t (&root)[3],
     bool isTerminal,
     int32_t (&newRoot)[3]) {
     // Build cylinder at origin along y-axis
-    time(&startFunction);
+    auto start = NOW();
     for (int32_t z = 0; z <= level.L; z++) {
         for (double az = 0; az < twoPi; az += Random::deg2rad) {
             int32_t x = (int32_t)round(level.r
@@ -184,39 +207,8 @@ void constructSegment(const int32_t (&root)[3],
     if (isTerminal) {
         constructAlveoli(newRoot, level.bAngle, rotateZ);
     }
-    time(&endFunction);
-    timeFunction += double(endFunction - startFunction);
-}
-
-void construct(const int32_t (&root)[3],
-    int iteration,
-    int index,
-    int end,
-    double previousBranchAngle,
-    double previousRotAngle) {
-    if (iteration > end) {
-        return;
-    }
-    bool isTerminal = (iteration == end) ? true : false;
-    // Uniform randomly rotate each branch
-    double rotateZ = (iteration >= 2) ? rnd_gen->get() : 0.0;
-    rotateZ = previousRotAngle - rotateZ;
-    // Draw left child bronchiole
-    Level lvl = levels.at(index);
-    lvl.bAngle = previousBranchAngle - lvl.bAngle;
-    int32_t lchild[3] = { 0, 0, 0 };
-    constructSegment(root, lvl, rotateZ, isTerminal, lchild);
-    construct(lchild, iteration + 1, index + 1, end, lvl.bAngle, rotateZ);
-    // Uniform randomly rotate each branch
-    rotateZ = (iteration >= 2) ? rnd_gen->get() : 0.0;
-    rotateZ = previousRotAngle + rotateZ;
-    // Draw right child bronchiole
-    lvl = levels.at(index);
-    lvl.bAngle = previousBranchAngle + lvl.bAngle;
-    lvl.gAngle = -lvl.gAngle;
-    int32_t rchild[3] = { 0, 0, 0 };
-    constructSegment(root, lvl, rotateZ, isTerminal, rchild);
-    construct(rchild, iteration + 1, index + 1, end, lvl.bAngle, rotateZ);
+    std::chrono::duration<double> t_elapsed = NOW() - start;
+    timeFunction += t_elapsed.count();
 }
 
 void loadEstimatedParameters() {
@@ -256,11 +248,46 @@ void loadEstimatedParameters() {
 }
 
 void reset() {
-    minx = maxx = miny = maxy = minz = maxz = 0;
-    numIntersectCells = 0;
-    numAlveoli = numAlveoliCells = 0;
     numAirways = numAirwayCells = 0;
+    numAlveoli = numAlveoliCells = 0;
+    numIntersectCells = 0;
+    minx = maxx = miny = maxy = minz = maxz = 0;
     epiCellPositions1D.clear();
+}
+
+void print() {
+    std::fprintf(stderr,
+        "Alveolars " "%" PRId64 " cells " "%" PRId64 "\n",
+        numAlveoli,
+        numAlveoliCells);
+    std::fprintf(stderr,
+        "Airways " "%" PRId64 " cells " "%" PRId64 "\n",
+        numAirways,
+        numAirwayCells);
+    std::fprintf(stderr,
+        "Total cells " "%" PRId64 "\n",
+        numAlveoliCells + numAirwayCells);
+#ifdef SLM_WRITE_TO_FILE
+    ofs.open("airway.csv", std::ofstream::out | std::ofstream::app);
+    if (!ofs.is_open()) {
+        std::fprintf(stderr, "Could not create file");
+        exit(1);
+    }
+    for (const int64_t& a : epiCellPositions1D) {
+        ofs << a << std::endl;
+    }
+    std::fprintf(stderr, "Bytes written %ld\n", (long)ofs.tellp());
+    ofs.close();
+#endif
+    std::fprintf(stderr,
+        "%d %d %d %d %d %d\n",
+        minx, maxx, miny, maxy, minz, maxz);
+    std::fprintf(stderr,
+        "Cells intersecting " "%" PRId64 "\n",
+        numIntersectCells);
+    std::fprintf(stderr,
+        "Recorded cells " "%" PRId64 "\n",
+        epiCellPositions1D.size());
 }
 
 int main(int argc, char *argv[]) {
@@ -275,10 +302,10 @@ int main(int argc, char *argv[]) {
     gridOffset[0] = atoi(argv[4]);
     gridOffset[1] = atoi(argv[5]);
     gridOffset[2] = atoi(argv[6]);
-    time(&startProgram);
+    auto start = NOW();
     loadEstimatedParameters();
     /**
-    * Starting at root and recursively build tree
+    * Starting at root and preorder iteratively build tree
     * 
     * lung lobe, num gen to model, starting row in table.txt
     * ******************************************************
@@ -289,7 +316,7 @@ int main(int argc, char *argv[]) {
     * lower left, 25, 98
     */
     std::ofstream ofs;
-    int generations[] = { 16 };//TODO 24, 24, 26, 24, 25};
+    int generations[] = { 20 };//TODO 24, 24, 26, 24, 25};
     int startIndex[] = { 0 };//TODO 24, 48, 74, 98};
     int32_t base[] = { 12628, 10516, 0 }; // Base of btree at roundUp(bounds/2)
     for (int i = 0; i < 1; i++) {//TODO 5; i++) {
@@ -300,53 +327,59 @@ int main(int argc, char *argv[]) {
         Level lvl = levels.at(startIndex[i]);
         int32_t root[3] = { 0, 0, 0 };
         constructSegment(base, lvl, 0.0, false, root);
-        construct(root,
+        branches.push(Branch(root,
             1,
             startIndex[i] + 1,
             generations[i] - 1,
             lvl.bAngle,
-            0.0);
-        // Print stats
-        std::fprintf(stderr,
-            "Alveolars " "%" PRId64 " cells " "%" PRId64 "\n",
-            numAlveoli,
-            numAlveoliCells);
-        std::fprintf(stderr,
-            "Airways " "%" PRId64 " cells " "%" PRId64 "\n",
-            numAirways,
-            numAirwayCells);
-        std::fprintf(stderr,
-            "Total cells " "%" PRId64 "\n",
-            numAlveoliCells + numAirwayCells);
-#ifdef SLM_WRITE_TO_FILE
-        ofs.open("airway.csv", std::ofstream::out | std::ofstream::app);
-        if (!ofs.is_open()) {
-            std::fprintf(stderr, "Could not create file");
-            exit(1);
+            0.0));
+        while (!branches.empty()) {
+           Branch branch = branches.top();
+           branches.pop();
+           if (branch.iteration <= branch.end) {
+               // Determine if this is a terminal bronchiole
+               bool isTerminal = (branch.iteration == branch.end) ? true : false;
+               // Uniform randomly rotate branch
+               double rotateZ = (branch.iteration >= 2) ? rnd_gen->get() : 0.0;
+               rotateZ = branch.previousRotAngle + rotateZ;
+               // Draw right child bronchiole
+               Level lvl = levels.at(branch.index);
+               lvl.bAngle = branch.previousBranchAngle + lvl.bAngle;
+               lvl.gAngle = -lvl.gAngle;
+               int32_t rchild[3] = { 0, 0, 0 };
+               constructSegment(branch.root, lvl, rotateZ, isTerminal, rchild);
+               // Push right child to stack first for preorder
+               branches.push(Branch(rchild,
+                   branch.iteration + 1,
+                   branch.index + 1,
+                   branch.end,
+                   lvl.bAngle,
+                   rotateZ));
+               // Uniform randomly rotate branch
+               rotateZ = (branch.iteration >= 2) ? rnd_gen->get() : 0.0;
+               rotateZ = branch.previousRotAngle - rotateZ;
+               // Draw left child bronchiole
+               lvl = levels.at(branch.index);
+               lvl.bAngle = branch.previousBranchAngle - lvl.bAngle;
+               int32_t lchild[3] = { 0, 0, 0 };
+               constructSegment(branch.root, lvl, rotateZ, isTerminal, lchild);
+               // Push left child to stack
+               branches.push(Branch(lchild,
+                   branch.iteration + 1,
+                   branch.index + 1,
+                   branch.end,
+                   lvl.bAngle,
+                   rotateZ));
+           }
         }
-        for (const int64_t& a : epiCellPositions1D) {
-            ofs << a << std::endl;
-        }
-        std::fprintf(stderr, "Bytes written %ld\n", (long)ofs.tellp());
-        ofs.close();
-#endif
-        std::fprintf(stderr,
-            "%d %d %d %d %d %d\n",
-            minx, maxx, miny, maxy, minz, maxz);
-        std::fprintf(stderr,
-            "Cells intersecting " "%" PRId64 "\n",
-            numIntersectCells);
-        std::fprintf(stderr,
-            "Recorded cells " "%" PRId64 "\n",
-            epiCellPositions1D.size());
+        print();
         reset();
     }
-    time(&endProgram);
     // Print timing
-    timeProgram = double(endProgram - startProgram);
+    std::chrono::duration<double> t_elapsed = NOW() - start;
     std::fprintf(stderr,
         "Total time %g Time in function %g\n",
-        timeProgram,
+        t_elapsed.count(),
         timeFunction);
     return 0;
 }
