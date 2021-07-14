@@ -316,8 +316,8 @@ int main(int argc, char *argv[]) {
     * lower left, 25, 98
     */
     std::ofstream ofs;
-    int generations[] = { 20 };//TODO 24, 24, 26, 24, 25};
-    int startIndex[] = { 0 };//TODO 24, 48, 74, 98};
+    int generations[] = { 24, 24, 26, 24, 25};
+    int startIndex[] = { 0, 24, 48, 74, 98};
     int32_t base[] = { 12628, 10516, 0 }; // Base of btree at roundUp(bounds/2)
     for (int i = 0; i < 1; i++) {//TODO 5; i++) {
         std::fprintf(stderr,
