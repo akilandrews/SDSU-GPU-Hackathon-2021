@@ -41,12 +41,10 @@ struct Branch {
     Branch(int32_t *root,
         int iteration,
         int index,
-        int end,
         int previousBranchAngle,
         int previousRotAngle) :
         iteration(iteration),
         index(index),
-        end(end),
         previousBranchAngle(previousBranchAngle),
         previousRotAngle(previousRotAngle) {
         std::copy(root, root + 3, this->root);
@@ -245,6 +243,17 @@ void loadEstimatedParameters() {
     } else {
         std::fprintf(stderr, "Failed to open table.txt\n");
     }
+    /*TODO
+    Computer the average number of alveoli per sac
+    alveolusPerSac
+    24, 0
+    24, 24
+    26, 48
+    24, 74
+    25, 98
+    -- , 123
+     */
+
 }
 
 void reset() {
@@ -314,10 +323,12 @@ int main(int argc, char *argv[]) {
     * lower right, 26, 48
     * upper left, 24, 74
     * lower left, 25, 98
+    * 
+    * Note* last generations are alveolus
     */
     std::ofstream ofs;
-    int generations[] = { 24, 24, 26, 24, 25};
-    int startIndex[] = { 0, 24, 48, 74, 98};
+    int generations[] = { 24, 24, 26, 24, 25 };
+    int startIndex[] = { 0, 24, 48, 74, 98 };
     int32_t base[] = { 12628, 10516, 0 }; // Base of btree at roundUp(bounds/2)
     for (int i = 0; i < 1; i++) {//TODO 5; i++) {
         std::fprintf(stderr,
@@ -330,15 +341,15 @@ int main(int argc, char *argv[]) {
         branches.push(Branch(root,
             1,
             startIndex[i] + 1,
-            generations[i] - 1,
             lvl.bAngle,
             0.0));
+        int lastGeneration = generations[i] - 2; // -1 for array indexing, -1 since last gen=alveolus
         while (!branches.empty()) {
            Branch branch = branches.top();
            branches.pop();
-           if (branch.iteration <= branch.end) {
+           if (branch.iteration <= lastGeneration) {
                // Determine if this is a terminal bronchiole
-               bool isTerminal = (branch.iteration == branch.end) ? true : false;
+               bool isTerminal = (branch.iteration == lastGeneration) ? true : false;
                // Uniform randomly rotate branch
                double rotateZ = (branch.iteration >= 2) ? rnd_gen->get() : 0.0;
                rotateZ = branch.previousRotAngle + rotateZ;
@@ -352,7 +363,6 @@ int main(int argc, char *argv[]) {
                branches.push(Branch(rchild,
                    branch.iteration + 1,
                    branch.index + 1,
-                   branch.end,
                    lvl.bAngle,
                    rotateZ));
                // Uniform randomly rotate branch
@@ -367,7 +377,6 @@ int main(int argc, char *argv[]) {
                branches.push(Branch(lchild,
                    branch.iteration + 1,
                    branch.index + 1,
-                   branch.end,
                    lvl.bAngle,
                    rotateZ));
            }
