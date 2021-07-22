@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -fopenmp
+CXXFLAGS = -std=c++11 -fopenmp -DSLM_WRITE_TO_FILE
 LDFLAGS = -fopenmp
 
 .PHONY: all

@@ -139,16 +139,19 @@ void addPosition(int32_t x,
         return;
     }
 #endif
-    // Compute model min max dimension boundaries
-    setModelBounds(position);
-    // Record new location and if the cell intersects another
-    auto success = epiCellPositions1D.insert(position[0] + position[1]
-        * gridSize[0] + position[2] * gridSize[0] * gridSize[1]);
-    if (!success.second) {
-        numIntersectCells++;
+#pragma omp critical
+    {
+        // Compute model min max dimension boundaries
+        setModelBounds(position);
+        // Record new location and if the cell intersects another
+        auto success = epiCellPositions1D.insert(position[0] + position[1]
+            * gridSize[0] + position[2] * gridSize[0] * gridSize[1]);
+        // Increment cell counts
+        if (!success.second) {
+            numIntersectCells++;
+        }
+        numCells++;
     }
-    // Increment total cell count
-    numCells++;
 }
 
 void constructAlveoli(const int32_t (&pos)[3], double bAngle, double rotateZ) {
@@ -181,11 +184,11 @@ void constructSegment(const int32_t (&root)[3],
     bool isTerminal,
     int32_t (&newRoot)[3]) {
     // Build cylinder at origin along y-axis
-    #pragma omp parallel num_threads(30)
+#pragma omp parallel num_threads(4)
     {
         int32_t x = 0, y = 0, z = 0;
         double az = 0.0;
-        #pragma omp for private(x,y,z,az)
+#pragma omp for private(x,y,z,az)
         for (int32_t z = 0; z <= level.L; z++) {
             for (double az = 0; az < twoPi; az += Random::deg2rad) {
                 int32_t x = (int32_t)round(level.r
@@ -280,6 +283,7 @@ void print() {
         "Total cells " "%" PRId64 "\n",
         numAlveoliCells + numAirwayCells);
 #ifdef SLM_WRITE_TO_FILE
+    std::ofstream ofs;
     ofs.open("airway.csv", std::ofstream::out | std::ofstream::app);
     if (!ofs.is_open()) {
         std::fprintf(stderr, "Could not create file");
@@ -329,8 +333,7 @@ int main(int argc, char *argv[]) {
     * 
     * Note* last generations are alveolus
     */
-    std::ofstream ofs;
-    int generations[] = { 10 };//TODO 24, 24, 26, 24, 25 };
+    int generations[] = { 6 };//TODO 24, 24, 26, 24, 25 };
     int startIndex[] = { 0 };//TODO 0, 24, 48, 74, 98 };
     int32_t base[] = { 12628, 10516, 0 }; // Base of btree at roundUp(bounds/2)
     for (int i = 0; i < 1; i++) {//TODO 5; i++) {
