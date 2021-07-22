@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <chrono>
+#include <omp.h>
 
 #define NOW std::chrono::high_resolution_clock::now
 
@@ -62,7 +63,6 @@ double zaxis[3] = { 0.0, 0.0, 1.0 };
 std::vector<Level> levels;
 std::stack<Branch> branches;
 std::shared_ptr<Random> rnd_gen = std::make_shared<Random>(753695190, 0, 179);
-double timeFunction = 0.0;
 
 // Input parameters
 int32_t gridSize[3] = {0}; // Simulation space size
@@ -181,16 +181,21 @@ void constructSegment(const int32_t (&root)[3],
     bool isTerminal,
     int32_t (&newRoot)[3]) {
     // Build cylinder at origin along y-axis
-    auto start = NOW();
-    for (int32_t z = 0; z <= level.L; z++) {
-        for (double az = 0; az < twoPi; az += Random::deg2rad) {
-            int32_t x = (int32_t)round(level.r
-                * sin(cylinderRadialIncrement)
-                * cos(az));
-            int32_t y = (int32_t)round(level.r
-                * sin(cylinderRadialIncrement)
-                * sin(az));
-            addPosition(x, y, z, root, level.bAngle, rotateZ, numAirwayCells);
+    #pragma omp parallel num_threads(30)
+    {
+        int32_t x = 0, y = 0, z = 0;
+        double az = 0.0;
+        #pragma omp for private(x,y,z,az)
+        for (int32_t z = 0; z <= level.L; z++) {
+            for (double az = 0; az < twoPi; az += Random::deg2rad) {
+                int32_t x = (int32_t)round(level.r
+                    * sin(cylinderRadialIncrement)
+                    * cos(az));
+                int32_t y = (int32_t)round(level.r
+                    * sin(cylinderRadialIncrement)
+                    * sin(az));
+                addPosition(x, y, z, root, level.bAngle, rotateZ, numAirwayCells);
+            }
         }
     }
     // Create root for next generation
@@ -205,8 +210,6 @@ void constructSegment(const int32_t (&root)[3],
     if (isTerminal) {
         constructAlveoli(newRoot, level.bAngle, rotateZ);
     }
-    std::chrono::duration<double> t_elapsed = NOW() - start;
-    timeFunction += t_elapsed.count();
 }
 
 void loadEstimatedParameters() {
@@ -327,8 +330,8 @@ int main(int argc, char *argv[]) {
     * Note* last generations are alveolus
     */
     std::ofstream ofs;
-    int generations[] = { 24, 24, 26, 24, 25 };
-    int startIndex[] = { 0, 24, 48, 74, 98 };
+    int generations[] = { 10 };//TODO 24, 24, 26, 24, 25 };
+    int startIndex[] = { 0 };//TODO 0, 24, 48, 74, 98 };
     int32_t base[] = { 12628, 10516, 0 }; // Base of btree at roundUp(bounds/2)
     for (int i = 0; i < 1; i++) {//TODO 5; i++) {
         std::fprintf(stderr,
@@ -386,9 +389,6 @@ int main(int argc, char *argv[]) {
     }
     // Print timing
     std::chrono::duration<double> t_elapsed = NOW() - start;
-    std::fprintf(stderr,
-        "Total time %g Time in function %g\n",
-        t_elapsed.count(),
-        timeFunction);
+    std::fprintf(stderr, "Total time %g\n", t_elapsed.count());
     return 0;
 }
