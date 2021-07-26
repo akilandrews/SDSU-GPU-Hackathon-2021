@@ -173,6 +173,10 @@ void constructAlveoli(const int32_t (&pos)[3],
             }
         }
     }
+#pragma omp critical
+    {
+        numAlveoli++;
+    }
 }
 
 void constructSegment(const int32_t (&root)[3],
@@ -194,6 +198,10 @@ void constructSegment(const int32_t (&root)[3],
             newPos = addPosition(x, y, z, root, level.bAngle, rotateZ);
             positions.push_back(newPos);
         }
+    }
+#pragma omp critical
+    {
+        numAirways++;
     }
     // Draw alveolus at each terminal airway
     if (isTerminal) {
@@ -313,7 +321,7 @@ int main(int argc, char *argv[]) {
     * 
     * Note* last generations are alveolus
     */
-    int generations[] = { 10 };//TODO 24, 24, 26, 24, 25 };
+    int generations[] = { 24, 24, 26, 24, 25 };
     int startIndex[] = { 0, 24, 48, 74, 98 };
     int32_t base[] = { 12628, 10516, 0 }; // Base of btree at roundUp(bounds/2)
     for (int i = 0; i < 1; i++) {//TODO 5; i++) {
@@ -340,7 +348,6 @@ int main(int argc, char *argv[]) {
                     epiCellPositions1D.insert(epiCellPositions1D.end(),
                         positions.begin(),
                         positions.end());
-                    numAirways++;
                 }
                 branches.push(Branch(root,
                     1,
@@ -385,10 +392,6 @@ int main(int argc, char *argv[]) {
                                     epiCellPositions1D.insert(epiCellPositions1D.end(),
                                         positions.begin(),
                                         positions.end());
-                                    numAirways++;
-                                    if (isTerminal) {
-                                        numAlveoli++;
-                                    }
                                 }
                             }
                             // Push right child to stack first for preorder
@@ -424,10 +427,6 @@ int main(int argc, char *argv[]) {
                                     epiCellPositions1D.insert(epiCellPositions1D.end(),
                                         positions.begin(),
                                         positions.end());
-                                    numAirways++;
-                                    if (isTerminal) {
-                                        numAlveoli++;
-                                    }
                                 }
                             }
                             // Push left child to stack
