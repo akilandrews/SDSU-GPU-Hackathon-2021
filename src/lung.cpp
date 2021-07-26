@@ -69,11 +69,11 @@ int32_t gridSize[3] = {0}; // Simulation space size
 int32_t gridOffset[3] = {0}; // Position of simulation space in model
 
 // Output variables
-int64_t numAirways = 0, numAlveoli = 0, numAlveoliCells = 0;
-int64_t numIntersectCells = 0;
+int64_t numAirways = 0, numAlveoli = 0;
+int64_t numCells = 0, numIntersectCells = 0;
 int32_t minx = 0, maxx = 0, miny = 0, maxy = 0, minz = 0, maxz = 0;
 std::unordered_set<int64_t> results;
-std::vector<std::vector<int64_t>> epiCellPositions1D;
+std::vector<int64_t> epiCellPositions1D;
 
 void rotate(int32_t (&vec)[3], const double (&axis)[3], double angle) {
     /**
@@ -168,11 +168,7 @@ void constructAlveoli(const int32_t (&pos)[3],
                         pos,
                         bAngle,
                         rotateZ);
-                    positions.insert(newPos);
-#pragma omp critical
-                    {
-                        numAlveoliCells++;//TODO maybe reduce?
-                    }
+                    positions.push_back(newPos);
                 }
             }
         }
@@ -200,7 +196,7 @@ void constructSegment(const int32_t (&root)[3],
                 * sin(cylinderRadialIncrement)
                 * sin(az));
             newPos = addPosition(x, y, z, root, level.bAngle, rotateZ);
-            positions.insert(newPos);
+            positions.push_back(newPos);
         }
     }
 #pragma omp critical
@@ -260,16 +256,11 @@ void loadEstimatedParameters() {
 
 }
 
-void reset() {
-    epiCellPositions1D.clear();
-}
-
 void print() {
     std::fprintf(stderr,
-        "Alveolars " "%" PRId64 " cells " "%" PRId64 "\n",
-        numAlveoli,
-        numAlveoliCells);
-    std::fprintf(stderr, "Airways " "%" PRId64 " cells\n", numAirways);
+        "Airways " "%" PRId64 " Alveolus " "%" PRId64 "\n",
+        numAirways,
+        numAlveoli);
 #ifdef SLM_WRITE_TO_FILE
     std::ofstream ofs;
     ofs.open("airway.csv", std::ofstream::out | std::ofstream::app);
@@ -287,26 +278,20 @@ void print() {
         "%d %d %d %d %d %d\n",
         minx, maxx, miny, maxy, minz, maxz);
     std::fprintf(stderr,
-        "Cells intersecting " "%" PRId64 "\n",
-        numIntersectCells);
-    std::fprintf(stderr,
-        "Records " "%" PRId64 "\n",
-        epiCellPositions1D.size());
+        "Cells intersecting " "%" PRId64 " total cells " "%" PRId64 "\n",
+        numIntersectCells,
+        numCells);
 }
 
 void reduce() {
-    for (auto segment : epiCellPositions1D) {
-        for (int64_t index : segment) {
-            // Record new location and if the cell intersects another
-            auto success = results.insert(index);
-            // Increment cell counts
-            if (!success.second) {
-                numIntersectCells++;
-            }
-            numCells++;
+    // Merge all positions into unordered set
+    for (int i = 0; i < epiCellPositions1D.size(); i++) {
+        // Record location and if the cell intersects another
+        auto success = results.insert(epiCellPositions1D[i]);
+        if (!success.second) {
+            numIntersectCells++;
         }
-        // Clear memory
-        segment.clear();
+        numCells++;
     }
 }
 
@@ -322,7 +307,6 @@ int main(int argc, char *argv[]) {
     gridOffset[0] = atoi(argv[4]);
     gridOffset[1] = atoi(argv[5]);
     gridOffset[2] = atoi(argv[6]);
-    auto start = NOW();
     loadEstimatedParameters();
     /**
     * Starting at root and preorder iteratively build tree
@@ -345,20 +329,33 @@ int main(int argc, char *argv[]) {
             "Processing lobe %d generations %d\n",
             i,
             generations[i]);
+        auto start = NOW();
 #pragma omp parallel
         {
 #pragma omp single
             {
+                // Create root for next generation
                 Level lvl = levels.at(startIndex[i]);
+                rotate(base, yaxis, lvl.bAngle);
+                rotate(base, zaxis, 0.0);
                 int32_t root[3] = { 0, 0, 0 };
-                constructSegment(base, lvl, 0.0, false, root);
+                root[0] = root[0] + base[0];
+                root[1] = root[1] + base[1];
+                root[2] = root[2] + base[2];
+                {
+                    std::vector<int64_t> positions;
+                    constructSegment(base, root, lvl, 0.0, false, positions);
+                    epiCellPositions1D.insert(epiCellPositions1D.end(),
+                        positions.begin(),
+                        positions.end());
+                }
                 branches.push(Branch(root,
                     1,
                     startIndex[i] + 1,
                     lvl.bAngle,
                     0.0));
                 int lastGeneration = generations[i] - 2; // -1 for array indexing, -1 since last gen=alveolus
-#pragma omp task untie // Thread switching for starvation
+#pragma omp task untied // Thread switching for starvation
                 {
                     while (!branches.empty()) {
                         Branch branch = branches.top();
@@ -374,18 +371,23 @@ int main(int argc, char *argv[]) {
                             lvl.bAngle = branch.previousBranchAngle + lvl.bAngle;
                             lvl.gAngle = -lvl.gAngle;
                             // Create root for next generation
-                            int32_t rchild[3] = { 0, 0, 0 };
-                            int32_t base[3] = { 0, 0, level.L };
-                            rotate(base, yaxis, level.bAngle);
+                            int32_t base[3] = { 0, 0, lvl.L };
+                            rotate(base, yaxis, lvl.bAngle);
                             rotate(base, zaxis, rotateZ);
+                            int32_t rchild[3] = { 0, 0, 0 };
                             rchild[0] = branch.root[0] + base[0];
                             rchild[1] = branch.root[1] + base[1];
                             rchild[2] = branch.root[2] + base[2];
 #pragma omp task
                             {
                                 std::vector<int64_t> positions;
-                                constructSegment(branch.root, lvl, rotateZ, isTerminal, rchild, positions);
-                                epiCellPositions1D.push_back(positions);
+                                constructSegment(branch.root, rchild, lvl, rotateZ, isTerminal, positions);
+#pragma omp critical
+                                {
+                                    epiCellPositions1D.insert(epiCellPositions1D.end(),
+                                        positions.begin(),
+                                        positions.end());
+                                }
                             }
                             // Push right child to stack first for preorder
                             branches.push(Branch(rchild,
@@ -400,17 +402,22 @@ int main(int argc, char *argv[]) {
                             lvl = levels.at(branch.index);
                             lvl.bAngle = branch.previousBranchAngle - lvl.bAngle;
                             // Create root for next generation
-                            int32_t lchild[3] = { 0, 0, 0 };
-                            rotate(base, yaxis, level.bAngle);
+                            rotate(base, yaxis, lvl.bAngle);
                             rotate(base, zaxis, rotateZ);
+                            int32_t lchild[3] = { 0, 0, 0 };
                             lchild[0] = branch.root[0] + base[0];
                             lchild[1] = branch.root[1] + base[1];
                             lchild[2] = branch.root[2] + base[2];
 #pragma omp task
                             {
                                 std::vector<int64_t> positions;
-                                constructSegment(branch.root, lvl, rotateZ, isTerminal, lchild, positions);
-                                epiCellPositions1D.push_back(positions);
+                                constructSegment(branch.root, lchild, lvl, rotateZ, isTerminal, positions);
+#pragma omp critical
+                                {
+                                    epiCellPositions1D.insert(epiCellPositions1D.end(),
+                                        positions.begin(),
+                                        positions.end());
+                                }
                             }
                             // Push left child to stack
                             branches.push(Branch(lchild,
@@ -424,12 +431,10 @@ int main(int argc, char *argv[]) {
 #pragma omp taskwait
             } // end single
         } // end parallel
-        print();
+        std::chrono::duration<double> t_elapsed = NOW() - start;
+        std::fprintf(stderr, "%d total time %g\n", i, t_elapsed.count());
         reduce();
-        reset();
+        print();
     }
-    // Print timing and return
-    std::chrono::duration<double> t_elapsed = NOW() - start;
-    std::fprintf(stderr, "Total time %g\n", t_elapsed.count());
     return 0;
 }
