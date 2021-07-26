@@ -173,10 +173,6 @@ void constructAlveoli(const int32_t (&pos)[3],
             }
         }
     }
-#pragma omp critical
-    {
-        numAlveoli++;
-    }
 }
 
 void constructSegment(const int32_t (&root)[3],
@@ -198,10 +194,6 @@ void constructSegment(const int32_t (&root)[3],
             newPos = addPosition(x, y, z, root, level.bAngle, rotateZ);
             positions.push_back(newPos);
         }
-    }
-#pragma omp critical
-    {
-        numAirways++;
     }
     // Draw alveolus at each terminal airway
     if (isTerminal) {
@@ -348,6 +340,7 @@ int main(int argc, char *argv[]) {
                     epiCellPositions1D.insert(epiCellPositions1D.end(),
                         positions.begin(),
                         positions.end());
+                    numAirways++;
                 }
                 branches.push(Branch(root,
                     1,
@@ -381,12 +374,21 @@ int main(int argc, char *argv[]) {
 #pragma omp task
                             {
                                 std::vector<int64_t> positions;
-                                constructSegment(branch.root, rchild, lvl, rotateZ, isTerminal, positions);
+                                constructSegment(branch.root,
+                                    rchild,
+                                    lvl,
+                                    rotateZ,
+                                    isTerminal,
+                                    positions);
 #pragma omp critical
                                 {
                                     epiCellPositions1D.insert(epiCellPositions1D.end(),
                                         positions.begin(),
                                         positions.end());
+                                    numAirways++;
+                                    if (isTerminal) {
+                                        numAlveoli++;
+                                    }
                                 }
                             }
                             // Push right child to stack first for preorder
@@ -411,12 +413,21 @@ int main(int argc, char *argv[]) {
 #pragma omp task
                             {
                                 std::vector<int64_t> positions;
-                                constructSegment(branch.root, lchild, lvl, rotateZ, isTerminal, positions);
+                                constructSegment(branch.root,
+                                    lchild,
+                                    lvl,
+                                    rotateZ,
+                                    isTerminal,
+                                    positions);
 #pragma omp critical
                                 {
                                     epiCellPositions1D.insert(epiCellPositions1D.end(),
                                         positions.begin(),
                                         positions.end());
+                                    numAirways++;
+                                    if (isTerminal) {
+                                        numAlveoli++;
+                                    }
                                 }
                             }
                             // Push left child to stack
