@@ -9,7 +9,3 @@ simcov ported to gpus
 
 ## Licensing
 FREE
-
-
-
-**Enjoy!**
